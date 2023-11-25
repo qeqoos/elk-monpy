@@ -64,47 +64,52 @@ completed_alert = yaml.safe_load(composed_alert)
 # print(open(f'{alert_name}.yaml').read())
 
 #### ALERT CHART
+hostname = 'elk'
+def alert_map():
+  severity_map = {
+    # "Low": '"level 1" OR "level 2" OR "level 3" OR "level 4"',
+    "Medium": '"level 5" OR "level 6"',
+    "Severe": '"level 7" OR "level 8"',
+    "Critical": '"level 9" OR "level 10"'
+  }
 
-def alert_num():
-  query = {
-    "query": {
-      "bool": {
-        "must": [
-          {
-            "range": {
-              "@timestamp": {
-                "gt": "now-6h"
-                # "gt": "2023-11-25T08:30:00.000Z",
-                # "lt": "2023-11-25T09:00:00.000Z"
-              }
-            }
-          },
-          {
-            "query_string": {
-              "query": '("level 5" OR "level 7") AND elk_client'
-            }
-          }
-        ]
-      }
-    }
-    # "query": {
-    #   "query_string": {
-    #     "query": '("level 5" OR "level 7") AND elk_client'
-    #   },
-    #   "range": {
-    #     "@timestamp": {
-    #       "gte": datetime(2023, 11, 25, 8, 0, 0).isoformat(),
-    #       "lte": datetime(2023, 11, 25, 18, 30, 0).isoformat()
-    #     }
-    #   }
-    # }
+  severity_count = {
+    # "Low": 0,
+    "Medium": 0,
+    "Severe": 0,
+    "Critical": 0
   }
 # AND {hostname}
   # print(datetime(2023, 11, 25, 8, 0, 0).strftime('%Y-%m-%dT%H:%M:%S'))
-  result = es.search(index=index_pattern, body=query)
-  return result
+  for key, val in severity_map.items():
+    query = {
+      "query": {
+        "bool": {
+          "must": [
+            {
+              "range": {
+                "@timestamp": {
+                  "gt": "now-12h"
+                }
+              }
+            },
+            {
+              "query_string": {
+                "query": f'({val}) AND {hostname}',
+                "default_field": "message"
+              }
+            }
+          ]
+        }
+      }
+    }
 
-# print(alert_num())
+    result = es.search(index=index_pattern, body=query)['hits']['total']
+    severity_count[key] = result
+
+  return severity_count
+
+print(alert_map())
 
 #### METRICS
 
@@ -130,7 +135,7 @@ def query_cpu():
   }
   result = es.search(index=index_pattern, body=query)
   cpu_usage = (result['hits']['hits'][0]['_source']['system']['cpu']['system']['pct'] / result['hits']['hits'][0]['_source']['system']['cpu']['cores']) * 100
-  return round(cpu_usage, 3)
+  return round(cpu_usage, 2)
 
 def query_ram():
   query = {
@@ -209,10 +214,9 @@ def query_uptime():
 # print(query_disk())
 # print(query_uptime())
 
-
-
 ########## INTERFACE ##########
 
+### BASE
 root = Tk()
 root.title('monpy')
 
@@ -230,6 +234,7 @@ y_cordinate = int((screen_height/2) - (window_height/2))
 
 root.geometry("{}x{}+{}+{}".format(window_width, window_height, x_cordinate, y_cordinate))
 
+### METRICS BARS
 cpu = Label(root, text = "-")
 cpu.place(x=400, y=500)
 
@@ -250,30 +255,37 @@ def update_metrics():
   uptime.config(text = str(query_uptime()) + " mins")
   root.after(2000, update_metrics)
 
-root.after(2000, update_metrics)
+root.after(10, update_metrics)
+
+### ALERT PIE CHART
 
 frameChartsLT = Frame(root, background='#f0f0f0')
 frameChartsLT.place(x=0, y=300, height=300, width=400 )
 
  # now to get the total number of failed in each section
-actualFigure = plt.figure(figsize = (8,8),constrained_layout=True)
-actualFigure.suptitle("OSSEC alerts", fontsize = 16)
+fig, axarr = plt.subplots()
+alert_dict = alert_map()
+labels = list(alert_dict.keys())
+vals = list(alert_dict.values())
 
-labels = ["Low", "Bananas", "Medium", "Critical"]
-
-
-canvas = None
+# draw the initial pie chart
+axarr.pie(vals, labels=labels, autopct='%1.1f%%',startangle=90)
+axarr.set_position([0.2,0,0.92,0.92])
+canvas = FigureCanvasTkAgg(fig, frameChartsLT)
+canvas.draw()
+canvas.get_tk_widget().pack()
 
 def update_pie():
-  global canvas
-  values = [random.randint(1, 10), random.randint(1, 10), random.randint(1, 10), random.randint(1, 10)]
-  pie, text = plt.pie(values)
-  plt.legend(pie, labels, bbox_to_anchor=(-0.2, 0.75))
-  if canvas: canvas.get_tk_widget().pack_forget()
-  canvas = FigureCanvasTkAgg(actualFigure, frameChartsLT)
-  canvas.get_tk_widget().pack()
-  root.after(2000, update_pie)
+    axarr.clear()
+    axarr.set_title("OSSEC severity chart", position=(0.3, 0.5))
+    alert_dict = alert_map()
+    labels = list(alert_dict.keys())
+    vals = list(alert_dict.values())
+    axarr.pie(vals, autopct='%1.1f%%',startangle=90)
+    axarr.legend(labels, title="Severity", bbox_to_anchor=(-0.01, 0.8))
+    fig.canvas.draw_idle()
+    root.after(2000, update_pie)
 
-root.after(2000, update_pie)
+root.after(10, update_pie)
 
 root.mainloop()
