@@ -134,7 +134,7 @@ def query_cpu():
     "size": 1
   }
   result = es.search(index=index_pattern, body=query)
-  cpu_usage = (result['hits']['hits'][0]['_source']['system']['cpu']['system']['pct'] / result['hits']['hits'][0]['_source']['system']['cpu']['cores']) * 100
+  cpu_usage = (result['hits']['hits'][0]['_source']['system']['cpu']['total']['pct'] / result['hits']['hits'][0]['_source']['system']['cpu']['cores']) * 100
   return round(cpu_usage, 2)
 
 def query_ram():
@@ -159,7 +159,9 @@ def query_ram():
   }
   result = es.search(index=index_pattern, body=query)
   ram_usage = result['hits']['hits'][0]['_source']['system']['memory']['used']['pct'] * 100
-  return round(ram_usage, 2)
+  ram_allocated = result['hits']['hits'][0]['_source']['system']['memory']['used']['bytes'] / 1024**3
+  ram_total = result['hits']['hits'][0]['_source']['system']['memory']['total'] / 1024**3
+  return [round(ram_usage, 2), round(ram_allocated, 1), round(ram_total, 1)]
 
 def query_disk():
   query = {
@@ -183,7 +185,9 @@ def query_disk():
   }
   result = es.search(index=index_pattern, body=query)
   disk_usage = result['hits']['hits'][0]['_source']['system']['fsstat']['total_size']['used'] / result['hits']['hits'][0]['_source']['system']['fsstat']['total_size']['total'] * 100
-  return round(disk_usage, 2)
+  disk_allocated = result['hits']['hits'][0]['_source']['system']['fsstat']['total_size']['used'] / 1024**3
+  disk_total = result['hits']['hits'][0]['_source']['system']['fsstat']['total_size']['total'] / 1024**3
+  return [round(disk_usage, 2), round(disk_allocated, 1), round(disk_total, 1)]
 
 def query_uptime():
   query = {
@@ -206,7 +210,7 @@ def query_uptime():
     "size": 1
   }
   result = es.search(index=index_pattern, body=query)
-  uptime_mins = result['hits']['hits'][0]['_source']['system']['uptime']['duration']['ms'] / 1000 / 60
+  uptime_mins = result['hits']['hits'][0]['_source']['system']['uptime']['duration']['ms'] / 1000
   return round(uptime_mins)
 
 # print(query_cpu())
@@ -223,7 +227,7 @@ root.title('monpy')
 window_height = 600
 window_width = 800
 
-root.geometry(f'{window_width}x{window_height}')
+# root.geometry(f'{window_width}x{window_height}')
 root.resizable(False, False)
 
 screen_width = root.winfo_screenwidth()
@@ -234,32 +238,86 @@ y_cordinate = int((screen_height/2) - (window_height/2))
 
 root.geometry("{}x{}+{}+{}".format(window_width, window_height, x_cordinate, y_cordinate))
 
+
+def create_lines(canvas):
+    canvas.create_line(0, window_height/2 - 10, window_width, window_height/2 - 10, fill="black") # horiz
+    canvas.create_line(window_width/2, 0, window_width/2, window_height, fill="black") # vertic
+
+canvas_bg = Canvas(root, width=window_width, height=window_height, background='white')
+canvas_bg.pack()
+create_lines(canvas_bg)
+
 ### METRICS BARS
-cpu = Label(root, text = "-")
-cpu.place(x=400, y=500)
+load_txt = Label(root, text = "Resource metrics", font='DejaVu 14', background='white').place(x=520, y=293)
 
-ram = Label(root, text = "-")
-ram.place(x=500, y=500)
+cpu_txt = Label(root, text = "CPU", background='white').place(x=478, y=325)
+cpu_pct = Label(root, text = "- %", background='white')
+cpu_pct.place(x=478, y=550)
+cpu_bar = ttk.Progressbar(root, orient='vertical', length=200, mode='determinate', style="TProgressbar")
+cpu_bar.place(x=480, y=350)
 
-disk = Label(root, text = "-")
-disk.place(x=600, y=500)
+ram_txt = Label(root, text = "RAM", background='white').place(x=575, y=325)
+ram_pct = Label(root, text = "- %", background='white')
+ram_pct.place(x=575, y=550)
+ram_vals = Label(root, text = "- / -", background='white')
+ram_vals.place(x=570, y=570)
+ram_bar = ttk.Progressbar(root, orient='vertical', length=200, mode='determinate', style="TProgressbar")
+ram_bar.place(x=580, y=350)
 
-uptime = Label(root, text = "-")
-uptime.place(x=700, y=500)
-
+disk_txt = Label(root, text = "Disk", background='white').place(x=675, y=325)
+disk_pct = Label(root, text = "- %", background='white')
+disk_pct.place(x=675, y=550)
+disk_vals = Label(root, text = "- / -", background='white')
+disk_vals.place(x=670, y=570)
+disk_bar = ttk.Progressbar(root, orient='vertical', length=200, mode='determinate', style="TProgressbar")
+disk_bar.place(x=680, y=350)
 
 def update_metrics():
-  cpu.config(text = query_cpu())
-  ram.config(text = query_ram())
-  disk.config(text = query_disk())
-  uptime.config(text = str(query_uptime()) + " mins")
+  cpu_parsed = query_cpu()
+  cpu_pct.config(text = str(cpu_parsed) + ' %')
+  cpu_bar['value'] = cpu_parsed
+
+  ram_parsed = query_ram()
+  ram_pct.config(text = str(ram_parsed[0]) + ' %')
+  ram_vals.config(text = str(ram_parsed[1]) + '/' + str(ram_parsed[2]) + ' GB')
+  ram_bar['value'] = ram_parsed[0]
+
+  disk_parsed = query_disk()
+  disk_pct.config(text = str(disk_parsed[0]) + ' %')
+  disk_vals.config(text = str(disk_parsed[1]) + '/' + str(disk_parsed[2]) + ' GB')
+  disk_bar['value'] = disk_parsed[0]
+
   root.after(2000, update_metrics)
 
 root.after(10, update_metrics)
 
-### ALERT PIE CHART
+### UPTIME
+def seconds_to_hms(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return "{:02}:{:02}:{:02}".format(int(hours), int(minutes), int(seconds))
 
-frameChartsLT = Frame(root, background='#f0f0f0')
+uptime_sec = query_uptime()
+uptime = Label(root, text = ("Uptime: " + seconds_to_hms(uptime_sec)), background='white')
+uptime.place(x=450, y=570)
+
+def update_uptime():
+  global uptime_sec
+  uptime_sec += 1
+  uptime.config(text = str("Uptime: " + seconds_to_hms(uptime_sec)))
+  root.after(1000, update_uptime)
+
+root.after(10, update_uptime)
+
+### ALERT PIE CHART
+def autopct_format(values):
+    def my_format(pct):
+        total = sum(values)
+        val = int(round(pct*total/100.0))
+        return '{:.1f}%\n({v:d})'.format(pct, v=val)
+    return my_format
+
+frameChartsLT = Frame(root)
 frameChartsLT.place(x=0, y=300, height=300, width=400 )
 
  # now to get the total number of failed in each section
@@ -269,7 +327,7 @@ labels = list(alert_dict.keys())
 vals = list(alert_dict.values())
 
 # draw the initial pie chart
-axarr.pie(vals, labels=labels, autopct='%1.1f%%',startangle=90)
+axarr.pie(vals, labels=labels, autopct=autopct_format(vals), startangle=90)
 axarr.set_position([0.2,0,0.92,0.92])
 canvas = FigureCanvasTkAgg(fig, frameChartsLT)
 canvas.draw()
@@ -281,11 +339,13 @@ def update_pie():
     alert_dict = alert_map()
     labels = list(alert_dict.keys())
     vals = list(alert_dict.values())
-    axarr.pie(vals, autopct='%1.1f%%',startangle=90)
+    axarr.pie(vals, autopct=autopct_format(vals), startangle=90)
     axarr.legend(labels, title="Severity", bbox_to_anchor=(-0.01, 0.8))
     fig.canvas.draw_idle()
     root.after(2000, update_pie)
 
 root.after(10, update_pie)
 
+
+root.configure(background="white")
 root.mainloop()
