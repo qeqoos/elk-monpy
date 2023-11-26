@@ -14,16 +14,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
-ES_HOST = '192.168.0.104'
-ES_PORT = 9200
-
-es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
-print(es.ping())
 index_pattern = 'logstash-*'
-
+ES_HOST = ''
+ES_PORT = 9200
+es = ''
 
 #### ALERT YAML GENERATOR
-
 alert_name = "ssh-brute"
 alert_query = "SSHD brute force trying to get access to the system"
 tg_bot_token = "6973162738:AAFyWuCEOVhu2hKlPACvjNJvjuDgTLfgPNo"
@@ -64,23 +60,22 @@ completed_alert = yaml.safe_load(composed_alert)
 # print(open(f'{alert_name}.yaml').read())
 
 #### ALERT CHART
-hostname = 'elk'
-def alert_map():
+
+def alert_map(hostname, used_time):
   severity_map = {
-    # "Low": '"level 1" OR "level 2" OR "level 3" OR "level 4"',
+    "Low": '"level 3" OR "level 4"',
     "Medium": '"level 5" OR "level 6"',
     "Severe": '"level 7" OR "level 8"',
     "Critical": '"level 9" OR "level 10"'
   }
 
   severity_count = {
-    # "Low": 0,
+    "Low": 0,
     "Medium": 0,
     "Severe": 0,
     "Critical": 0
   }
-# AND {hostname}
-  # print(datetime(2023, 11, 25, 8, 0, 0).strftime('%Y-%m-%dT%H:%M:%S'))
+
   for key, val in severity_map.items():
     query = {
       "query": {
@@ -89,7 +84,7 @@ def alert_map():
             {
               "range": {
                 "@timestamp": {
-                  "gt": "now-12h"
+                  "gt": f"now-{used_time}"
                 }
               }
             },
@@ -109,16 +104,14 @@ def alert_map():
 
   return severity_count
 
-print(alert_map())
-
 #### METRICS
 
-def query_cpu():
+def query_cpu(hostname):
   query = {
     "query": {
       "bool": {
         "must": [
-          {"term": {"beat.hostname": "elk_client"}},
+          {"term": {"beat.hostname": f"{hostname}"}},
           {"term": {"tags": "beats_input_raw_event"}},
           {"term": {"metricset.name": "cpu"}}
         ]
@@ -137,12 +130,12 @@ def query_cpu():
   cpu_usage = (result['hits']['hits'][0]['_source']['system']['cpu']['total']['pct'] / result['hits']['hits'][0]['_source']['system']['cpu']['cores']) * 100
   return round(cpu_usage, 2)
 
-def query_ram():
+def query_ram(hostname):
   query = {
     "query": {
       "bool": {
         "must": [
-          {"term": {"beat.hostname": "elk_client"}},
+          {"term": {"beat.hostname": f"{hostname}"}},
           {"term": {"tags": "beats_input_raw_event"}},
           {"term": {"metricset.name": "memory"}}
         ]
@@ -163,12 +156,12 @@ def query_ram():
   ram_total = result['hits']['hits'][0]['_source']['system']['memory']['total'] / 1024**3
   return [round(ram_usage, 2), round(ram_allocated, 1), round(ram_total, 1)]
 
-def query_disk():
+def query_disk(hostname):
   query = {
     "query": {
       "bool": {
         "must": [
-          {"term": {"beat.hostname": "elk_client"}},
+          {"term": {"beat.hostname": f"{hostname}"}},
           {"term": {"tags": "beats_input_raw_event"}},
           {"term": {"metricset.name": "fsstat"}}
         ]
@@ -189,12 +182,12 @@ def query_disk():
   disk_total = result['hits']['hits'][0]['_source']['system']['fsstat']['total_size']['total'] / 1024**3
   return [round(disk_usage, 2), round(disk_allocated, 1), round(disk_total, 1)]
 
-def query_uptime():
+def query_uptime(hostname):
   query = {
     "query": {
       "bool": {
         "must": [
-          {"term": {"beat.hostname": "elk_client"}},
+          {"term": {"beat.hostname": f"{hostname}"}},
           {"term": {"tags": "beats_input_raw_event"}},
           {"term": {"metricset.name": "uptime"}}
         ]
@@ -213,11 +206,6 @@ def query_uptime():
   uptime_mins = result['hits']['hits'][0]['_source']['system']['uptime']['duration']['ms'] / 1000
   return round(uptime_mins)
 
-# print(query_cpu())
-# print(query_ram())
-# print(query_disk())
-# print(query_uptime())
-
 ########## INTERFACE ##########
 
 ### BASE
@@ -227,7 +215,6 @@ root.title('monpy')
 window_height = 600
 window_width = 800
 
-# root.geometry(f'{window_width}x{window_height}')
 root.resizable(False, False)
 
 screen_width = root.winfo_screenwidth()
@@ -246,6 +233,50 @@ def create_lines(canvas):
 canvas_bg = Canvas(root, width=window_width, height=window_height, background='white')
 canvas_bg.pack()
 create_lines(canvas_bg)
+
+### MAIN INFO BLOCK
+settings_label = Label(root, text='Server settings', font='DejaVu 14', background='white').place(x=130, y=10)
+
+# ELK server
+server_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
+server_frame.place(x=10, y=60)
+
+elk_hostname_label = Label(server_frame, text='ELK server hostname:', background='white')
+elk_hostname_label.grid(row=0, column=0, padx=0, pady=3, sticky=W)
+
+elk_hostname_entry = Entry(server_frame, width=15, borderwidth=3)
+elk_hostname_entry.grid(row=0, column=1, padx=3, pady=3, sticky=E)
+elk_hostname_entry.insert(0, "elk")
+
+elk_ip_label = Label(server_frame, text='ELK server IP:', background='white')
+elk_ip_label.grid(row=1, column=0, padx=0, pady=3, sticky=W)
+
+elk_ip_entry = Entry(server_frame, width=15, borderwidth=3)
+elk_ip_entry.grid(row=1, column=1, padx=3, pady=3, sticky=E)
+elk_ip_entry.insert(0, "192.168.0.104")
+
+# ES_HOST = elk_ip_entry.get()
+# es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
+
+### Target
+target_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
+target_frame.place(x=10, y=130)
+
+target_hostname_label = Label(target_frame, text='Target server hostname:', background='white')
+target_hostname_label.grid(row=0, column=0, padx=0, pady=3, sticky=W)
+
+target_hostname_entry = Entry(target_frame, width=15, borderwidth=3)
+target_hostname_entry.grid(row=0, column=1, padx=3, pady=3, sticky=E)
+target_hostname_entry.insert(0, "elk_client")
+
+hostname = target_hostname_entry.get()
+
+target_ip_label = Label(target_frame, text='Target server IP:', background='white')
+target_ip_label.grid(row=1, column=0, padx=0, pady=3, sticky=W)
+
+target_ip_entry = Entry(target_frame, width=15, borderwidth=3)
+target_ip_entry.grid(row=1, column=1, padx=3, pady=3, sticky=E)
+target_ip_entry.insert(0, "192.168.0.103")
 
 ### METRICS BARS
 load_txt = Label(root, text = "Resource metrics", font='DejaVu 14', background='white').place(x=520, y=293)
@@ -273,23 +304,28 @@ disk_bar = ttk.Progressbar(root, orient='vertical', length=200, mode='determinat
 disk_bar.place(x=680, y=350)
 
 def update_metrics():
-  cpu_parsed = query_cpu()
+  hostname = target_hostname_entry.get()
+  try:
+    cpu_parsed = query_cpu(hostname)
+    ram_parsed = query_ram(hostname)
+    disk_parsed = query_disk(hostname)
+  except:
+    cpu_parsed = 0
+    ram_parsed = [0, "-", "-"]
+    disk_parsed = [0, "-", "-"]
+
   cpu_pct.config(text = str(cpu_parsed) + ' %')
   cpu_bar['value'] = cpu_parsed
 
-  ram_parsed = query_ram()
   ram_pct.config(text = str(ram_parsed[0]) + ' %')
   ram_vals.config(text = str(ram_parsed[1]) + '/' + str(ram_parsed[2]) + ' GB')
   ram_bar['value'] = ram_parsed[0]
 
-  disk_parsed = query_disk()
   disk_pct.config(text = str(disk_parsed[0]) + ' %')
   disk_vals.config(text = str(disk_parsed[1]) + '/' + str(disk_parsed[2]) + ' GB')
   disk_bar['value'] = disk_parsed[0]
 
-  root.after(2000, update_metrics)
-
-root.after(10, update_metrics)
+  root.after(4000, update_metrics)
 
 ### UPTIME
 def seconds_to_hms(seconds):
@@ -297,8 +333,8 @@ def seconds_to_hms(seconds):
     minutes, seconds = divmod(remainder, 60)
     return "{:02}:{:02}:{:02}".format(int(hours), int(minutes), int(seconds))
 
-uptime_sec = query_uptime()
-uptime = Label(root, text = ("Uptime: " + seconds_to_hms(uptime_sec)), background='white')
+uptime_sec = 0
+uptime = Label(root, text = ("Uptime: -"), background='white')
 uptime.place(x=450, y=570)
 
 def update_uptime():
@@ -306,8 +342,6 @@ def update_uptime():
   uptime_sec += 1
   uptime.config(text = str("Uptime: " + seconds_to_hms(uptime_sec)))
   root.after(1000, update_uptime)
-
-root.after(10, update_uptime)
 
 ### ALERT PIE CHART
 def autopct_format(values):
@@ -320,14 +354,35 @@ def autopct_format(values):
 frameChartsLT = Frame(root)
 frameChartsLT.place(x=0, y=300, height=300, width=400 )
 
+timeframe_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
+timeframe_frame.place(x=10, y=330)
+
+# Create label and entry within the frame
+timeframe_label = Label(timeframe_frame, text='Timeframe (e.g. 10m, 1h):', font='DejaVu 10', background='white')
+timeframe_label.grid(row=0, column=0, padx=0, pady=0, sticky=W)
+
+timeframe = Entry(timeframe_frame, width=10, borderwidth=3)
+timeframe.grid(row=1, column=0, padx=3, pady=0, sticky=W)
+timeframe.insert(0, "24h")
+used_time = timeframe.get()
+# print(alert_map(hostname, used_time))
+
  # now to get the total number of failed in each section
 fig, axarr = plt.subplots()
-alert_dict = alert_map()
-labels = list(alert_dict.keys())
-vals = list(alert_dict.values())
+clour_map = {
+  "Low": "#f0f0f0",
+  "Medium": "yellow",
+  "Severe": "orange",
+  "Critical": "red"
+}
 
+# alert_dict = {key: value for key, value in alert_map(hostname, used_time).items() if value != 0}
+# labels = list(alert_dict.keys())
+vals = [0,1]
+color_list = ["#f0f0f0"]
 # draw the initial pie chart
-axarr.pie(vals, labels=labels, autopct=autopct_format(vals), startangle=90)
+axarr.set_title("OSSEC severity chart", position=(0.3, 0.5))
+axarr.pie(vals, autopct=autopct_format(vals), startangle=90, colors=color_list)
 axarr.set_position([0.2,0,0.92,0.92])
 canvas = FigureCanvasTkAgg(fig, frameChartsLT)
 canvas.draw()
@@ -336,16 +391,46 @@ canvas.get_tk_widget().pack()
 def update_pie():
     axarr.clear()
     axarr.set_title("OSSEC severity chart", position=(0.3, 0.5))
-    alert_dict = alert_map()
+    hostname = target_hostname_entry.get()
+    used_time = timeframe.get()
+    alert_dict = {key: value for key, value in alert_map(hostname, used_time).items() if value != 0}
     labels = list(alert_dict.keys())
     vals = list(alert_dict.values())
-    axarr.pie(vals, autopct=autopct_format(vals), startangle=90)
+    color_list = [clour_map[value] for value in labels]
+    axarr.pie(vals, autopct=autopct_format(vals), startangle=90, colors=color_list)
     axarr.legend(labels, title="Severity", bbox_to_anchor=(-0.01, 0.8))
     fig.canvas.draw_idle()
-    root.after(2000, update_pie)
-
-root.after(10, update_pie)
-
+    root.after(5000, update_pie)
 
 root.configure(background="white")
+
+def check_elk_host():
+  ES_HOST = elk_ip_entry.get()
+  es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
+  if es.ping():
+    print("Host up.")
+    return True
+  else:
+    print("Waiting for host to become online...")
+
+def check_client():
+   target_hostname = target_hostname_entry.get()
+   target_ip = target_ip_entry.get()
+   if target_hostname in ['elk', 'elk_client', 'elk_client2'] and target_ip in ['192.168.0.103', '192.168.0.104', '192.168.0.105']:
+      return True
+
+def start_mon():
+   global ES_HOST, es, uptime_sec
+   ES_HOST = elk_ip_entry.get()
+   es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
+   if check_elk_host() and check_client():
+      uptime_sec = query_uptime(hostname)
+      root.after(10, update_pie)
+      root.after(10, update_uptime)
+      root.after(10, update_metrics)
+
+Button(root, text='Check ELK server', command=check_elk_host, width=14, height=1).place(x=275, y=60)
+Button(root, text='Check client', command=check_client, width=14, height=1).place(x=275, y=130)
+Button(root, text='Start monitoring', command=start_mon, width=14, height=1).place(x=150, y=230)
+
 root.mainloop()
