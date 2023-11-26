@@ -20,44 +20,67 @@ ES_PORT = 9200
 es = ''
 
 #### ALERT YAML GENERATOR
-alert_name = "ssh-brute"
-alert_query = "SSHD brute force trying to get access to the system"
-tg_bot_token = "6973162738:AAFyWuCEOVhu2hKlPACvjNJvjuDgTLfgPNo"
-tg_room_id = "@elk_alert_scream"
+template_type = ""
+notification_type = "telegram"
 
-alert_template = f"""
-name: {alert_name}
-index: logstash-*
-filter:
-  - query:
-      query_string:
-        query: '"{alert_query}"'
-"""
+def compose_alert():
+  alert_name = "ssh-brute"
+  alert_query = "SSHD brute force trying to get access to the system"
+  num_events = ""
+  timeframe = ""
+  tg_bot_token = "6973162738:AAFyWuCEOVhu2hKlPACvjNJvjuDgTLfgPNo"
+  tg_room_id = "@elk_alert_scream"
+  email_address = "pavel.patalashko@gmail.com"
 
-any_template = "type: any"
+  alert_template = f"""
+  name: {alert_name}
+  index: {index_pattern}
+  filter:
+    - query:
+        query_string:
+          query: '"{alert_query}"'
+  """
 
-frequency_template = """
-type: frequency
-num_events: 2
-timeframe:
-  minutes: 2
-"""
+  if template_type == "any":
+    type_template = "type: any"
+  elif template_type == "frequency":
+    num_events = num_events_entry.get()
+    timeframe = frequency_time_entry.get()
+    type_template = f"""
+  type: frequency
+  num_events: {num_events}
+  timeframe:
+    minutes: {timeframe}
+    """
 
-telegram_template = f"""
-alert:
-  - "telegram"
-telegram_bot_token: {tg_bot_token}
-telegram_room_id: "{tg_room_id}"
-"""
+  if notification_type == "telegram":
+    notification_template = f"""
+  alert:
+    - "telegram"
+  telegram_bot_token: {tg_bot_token}
+  telegram_room_id: "{tg_room_id}"
+    """
+  elif notification_type == "email":
+    notification_template = f"""
+  alert:
+  - "email"
+  email:
+    - "{email_address}"
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_ssl: true
+  smtp_auth_file: "/root/gmail_auth_file"
+    """
 
-composed_alert = alert_template + any_template + telegram_template
+  composed_alert = alert_template + type_template + notification_template
+  print(composed_alert)
 
-completed_alert = yaml.safe_load(composed_alert)
+  completed_alert = yaml.safe_load(composed_alert)
 
-# with open(f'{alert_name}.yaml', 'w') as file:
-#     yaml.dump(completed_alert, file)
+  # with open(f'{alert_name}.yaml', 'w') as file:
+  #     yaml.dump(completed_alert, file)
 
-# print(open(f'{alert_name}.yaml').read())
+  # print(open(f'{alert_name}.yaml').read())
 
 #### ALERT CHART
 
@@ -234,11 +257,102 @@ canvas_bg = Canvas(root, width=window_width, height=window_height, background='w
 canvas_bg.pack()
 create_lines(canvas_bg)
 
+### ALERT COMPOSER
+alert_composer_label = Label(root, text='Alert composer', font='DejaVu 14', background='white').place(x=540, y=10)
+
+query_label = Label(root, text='Query:', background='white').place(x=413, y=47)
+query_entry = Entry(root, width=53, borderwidth=3)
+query_entry.place(x=460, y=47)
+### TYPE FRAME
+alert_type_frame = LabelFrame(root, text="Type", background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
+alert_type_frame.place(x=410, y=75)
+def any_choice():
+    global template_type
+    frequency_time_entry.configure(state='disabled')
+    num_events_entry.configure(state='disabled')
+
+    frequency_time_entry.update()
+    num_events_entry.update()
+    template_type = "any"
+
+def frequency_choice():
+    global template_type
+    frequency_time_entry.configure(state='normal')
+    num_events_entry.configure(state='normal')
+
+    frequency_time_entry.update()
+    num_events_entry.update()
+    template_type = "frequency"
+
+var = StringVar()
+rb_any = Radiobutton(alert_type_frame, text='Any', variable=var, value='0', background="white", command=any_choice).grid(row=0, column=0, padx=0, pady=0, sticky=W)
+rb_frequency = Radiobutton(alert_type_frame, text='Frequency', variable=var, value='1', background="white", command=frequency_choice).grid(row=0, column=1, padx=0, pady=0, sticky=W)
+
+frequency_time_label = Label(alert_type_frame, text='Timeframe:', background='white')
+frequency_time_label.grid(row=1, column=1, padx=20, pady=0, sticky=W)
+
+frequency_time_entry = Entry(alert_type_frame, width=5, borderwidth=3)
+frequency_time_entry.grid(row=1, column=2, padx=3, pady=0, sticky=E)
+
+num_events_label = Label(alert_type_frame, text='Events number:', background='white')
+num_events_label.grid(row=2, column=1, padx=20, pady=0, sticky=W)
+
+num_events_entry = Entry(alert_type_frame, width=5, borderwidth=3)
+num_events_entry.grid(row=2, column=2, padx=3, pady=0, sticky=E)
+
+### NOTIFICATION
+notification_type_frame = LabelFrame(root, text="Notification", background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
+notification_type_frame.place(x=410, y=170)
+def telegram_choice():
+    global notification_type
+    bot_token_entry.configure(state='normal')
+    channel_id_entry.configure(state='normal')
+    email_entry.configure(state='disabled')
+
+    bot_token_entry.update()
+    channel_id_entry.update()
+    email_entry.update()
+    notification_type = "telegram"
+
+def email_choice():
+    global notification_type
+    bot_token_entry.configure(state='disabled')
+    channel_id_entry.configure(state='disabled')
+    email_entry.configure(state='normal')
+
+    bot_token_entry.update()
+    channel_id_entry.update()
+    email_entry.update()
+    notification_type = "email"
+
+var2 = StringVar()
+rb_telegram = Radiobutton(notification_type_frame, text='Telegram', variable=var2, value='0', background="white", command=telegram_choice).grid(row=0, column=0, padx=0, pady=0, sticky=W)
+rb_email = Radiobutton(notification_type_frame, text='Email', variable=var2, value='1', background="white", command=email_choice).grid(row=0, column=2, padx=20, pady=0, sticky=W)
+
+bot_token_label = Label(notification_type_frame, text='Bot token:', background='white')
+bot_token_label.grid(row=1, column=0, padx=5, pady=0, sticky=W)
+
+bot_token_entry = Entry(notification_type_frame, width=17, borderwidth=3)
+bot_token_entry.grid(row=1, column=1, padx=0, pady=0, sticky=E)
+
+channel_id_label = Label(notification_type_frame, text='Channel ID:', background='white')
+channel_id_label.grid(row=2, column=0, padx=5, pady=0, sticky=W)
+
+channel_id_entry = Entry(notification_type_frame, width=17, borderwidth=3)
+channel_id_entry.grid(row=2, column=1, padx=0, pady=0, sticky=E)
+
+email_label = Label(notification_type_frame, text='Email address:', background='white')
+email_label.grid(row=1, column=2, padx=20, pady=0, sticky=W)
+
+email_entry = Entry(notification_type_frame, width=23, borderwidth=3)
+email_entry.grid(row=2, column=2, padx=20, pady=0, sticky=E)
+
+Button(root, text='Compose alert', command=compose_alert, width=19, height=1).place(x=645, y=138)
 ### MAIN INFO BLOCK
 settings_label = Label(root, text='Server settings', font='DejaVu 14', background='white').place(x=130, y=10)
 
 # ELK server
-server_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
+server_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
 server_frame.place(x=10, y=60)
 
 elk_hostname_label = Label(server_frame, text='ELK server hostname:', background='white')
@@ -255,12 +369,16 @@ elk_ip_entry = Entry(server_frame, width=15, borderwidth=3)
 elk_ip_entry.grid(row=1, column=1, padx=3, pady=3, sticky=E)
 elk_ip_entry.insert(0, "192.168.0.104")
 
+elk_readiness_status = Label(root, text='Status:', background='white').place(x=275, y=95)
+elk_readiness_label = Label(root, text='down', background='white', foreground='red')
+elk_readiness_label.place(x=330, y=95)
+
 # ES_HOST = elk_ip_entry.get()
 # es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
 
 ### Target
-target_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
-target_frame.place(x=10, y=130)
+target_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
+target_frame.place(x=10, y=150)
 
 target_hostname_label = Label(target_frame, text='Target server hostname:', background='white')
 target_hostname_label.grid(row=0, column=0, padx=0, pady=3, sticky=W)
@@ -277,6 +395,10 @@ target_ip_label.grid(row=1, column=0, padx=0, pady=3, sticky=W)
 target_ip_entry = Entry(target_frame, width=15, borderwidth=3)
 target_ip_entry.grid(row=1, column=1, padx=3, pady=3, sticky=E)
 target_ip_entry.insert(0, "192.168.0.103")
+
+target_readiness_status = Label(root, text='Status:', background='white').place(x=275, y=185)
+target_readiness_label = Label(root, text='down', background='white',  foreground='red')
+target_readiness_label.place(x=330, y=185)
 
 ### METRICS BARS
 load_txt = Label(root, text = "Resource metrics", font='DejaVu 14', background='white').place(x=520, y=293)
@@ -354,7 +476,7 @@ def autopct_format(values):
 frameChartsLT = Frame(root)
 frameChartsLT.place(x=0, y=300, height=300, width=400 )
 
-timeframe_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")  # bd is the borderwidth, and relief gives it a raised appearance
+timeframe_frame = Frame(root, bd=2, relief=GROOVE, background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
 timeframe_frame.place(x=10, y=330)
 
 # Create label and entry within the frame
@@ -409,15 +531,21 @@ def check_elk_host():
   es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
   if es.ping():
     print("Host up.")
+    elk_readiness_label.configure(text="Running", foreground="green")
     return True
   else:
+    target_readiness_label.configure(text="Down", foreground="red")
     print("Waiting for host to become online...")
+    return False
 
 def check_client():
    target_hostname = target_hostname_entry.get()
    target_ip = target_ip_entry.get()
    if target_hostname in ['elk', 'elk_client', 'elk_client2'] and target_ip in ['192.168.0.103', '192.168.0.104', '192.168.0.105']:
+      target_readiness_label.configure(text="Running", foreground="green")
       return True
+   else:
+      target_readiness_label.configure(text="Down", foreground="red")
 
 def start_mon():
    global ES_HOST, es, uptime_sec
@@ -430,7 +558,7 @@ def start_mon():
       root.after(10, update_metrics)
 
 Button(root, text='Check ELK server', command=check_elk_host, width=14, height=1).place(x=275, y=60)
-Button(root, text='Check client', command=check_client, width=14, height=1).place(x=275, y=130)
-Button(root, text='Start monitoring', command=start_mon, width=14, height=1).place(x=150, y=230)
+Button(root, text='Check client', command=check_client, width=14, height=1).place(x=275, y=150)
+Button(root, text='Start monitoring', command=start_mon, width=14, height=1).place(x=150, y=240)
 
 root.mainloop()
