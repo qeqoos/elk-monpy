@@ -24,61 +24,63 @@ template_type = ""
 notification_type = "telegram"
 
 def compose_alert():
-  alert_name = "ssh-brute"
-  alert_query = "SSHD brute force trying to get access to the system"
-  num_events = ""
-  timeframe = ""
-  tg_bot_token = "6973162738:AAFyWuCEOVhu2hKlPACvjNJvjuDgTLfgPNo"
-  tg_room_id = "@elk_alert_scream"
-  email_address = "pavel.patalashko@gmail.com"
+  alert_name = name_entry.get()
+  alert_query = query_entry.get()
+  num_events = num_events_entry.get()
+  timeframe = frequency_time_entry.get()
+  tg_bot_token = bot_token_entry.get()
+  tg_room_id = channel_id_entry.get()
+  email_address = email_entry.get()
 
   alert_template = f"""
-  name: {alert_name}
-  index: {index_pattern}
-  filter:
-    - query:
-        query_string:
-          query: '"{alert_query}"'
-  """
+name: {alert_name}
+index: {index_pattern}
+filter:
+  - query:
+      query_string:
+        query: '{alert_query}'
+"""
 
   if template_type == "any":
-    type_template = "type: any"
+    type_template = """
+type: any
+"""
   elif template_type == "frequency":
     num_events = num_events_entry.get()
     timeframe = frequency_time_entry.get()
     type_template = f"""
-  type: frequency
-  num_events: {num_events}
-  timeframe:
-    minutes: {timeframe}
-    """
+type: frequency
+num_events: {num_events}
+timeframe:
+  minutes: {timeframe}
+"""
 
   if notification_type == "telegram":
     notification_template = f"""
-  alert:
-    - "telegram"
-  telegram_bot_token: {tg_bot_token}
-  telegram_room_id: "{tg_room_id}"
-    """
+alert:
+  - "telegram"
+telegram_bot_token: {tg_bot_token}
+telegram_room_id: "{tg_room_id}"
+"""
   elif notification_type == "email":
     notification_template = f"""
-  alert:
-  - "email"
-  email:
-    - "{email_address}"
-  smtp_host: "smtp.gmail.com"
-  smtp_port: 587
-  smtp_ssl: true
-  smtp_auth_file: "/root/gmail_auth_file"
-    """
+alert:
+- "email"
+email:
+  - "{email_address}"
+smtp_host: smtp.office365.com
+smtp_port: 587
+smtp_auth_file: "/opt/elastalert/outlook_auth_file"
+from_addr: elk_alert_scream@outlook.com
+"""
 
   composed_alert = alert_template + type_template + notification_template
   print(composed_alert)
 
   completed_alert = yaml.safe_load(composed_alert)
 
-  # with open(f'{alert_name}.yaml', 'w') as file:
-  #     yaml.dump(completed_alert, file)
+  with open(f'{alert_name}.yaml', 'w') as file:
+      yaml.dump(completed_alert, file)
 
   # print(open(f'{alert_name}.yaml').read())
 
@@ -263,6 +265,10 @@ alert_composer_label = Label(root, text='Alert composer', font='DejaVu 14', back
 query_label = Label(root, text='Query:', background='white').place(x=413, y=47)
 query_entry = Entry(root, width=53, borderwidth=3)
 query_entry.place(x=460, y=47)
+
+name_label = Label(root, text='Name:', background='white').place(x=645, y=94)
+name_entry = Entry(root, width=15, borderwidth=3)
+name_entry.place(x=690, y=94)
 ### TYPE FRAME
 alert_type_frame = LabelFrame(root, text="Type", background='white', highlightbackground="#f0f0f0", highlightcolor="#f0f0f0")
 alert_type_frame.place(x=410, y=75)
@@ -332,14 +338,16 @@ rb_email = Radiobutton(notification_type_frame, text='Email', variable=var2, val
 bot_token_label = Label(notification_type_frame, text='Bot token:', background='white')
 bot_token_label.grid(row=1, column=0, padx=5, pady=0, sticky=W)
 
-bot_token_entry = Entry(notification_type_frame, width=17, borderwidth=3)
+bot_token_entry = Entry(notification_type_frame, width=17, borderwidth=3, show='\U00002022')
 bot_token_entry.grid(row=1, column=1, padx=0, pady=0, sticky=E)
+bot_token_entry.insert(0, "6973162738:AAFyWuCEOVhu2hKlPACvjNJvjuDgTLfgPNo")
 
 channel_id_label = Label(notification_type_frame, text='Channel ID:', background='white')
 channel_id_label.grid(row=2, column=0, padx=5, pady=0, sticky=W)
 
 channel_id_entry = Entry(notification_type_frame, width=17, borderwidth=3)
 channel_id_entry.grid(row=2, column=1, padx=0, pady=0, sticky=E)
+channel_id_entry.insert(0, "@elk_alert_scream")
 
 email_label = Label(notification_type_frame, text='Email address:', background='white')
 email_label.grid(row=1, column=2, padx=20, pady=0, sticky=W)
@@ -455,13 +463,11 @@ def seconds_to_hms(seconds):
     minutes, seconds = divmod(remainder, 60)
     return "{:02}:{:02}:{:02}".format(int(hours), int(minutes), int(seconds))
 
-uptime_sec = 0
 uptime = Label(root, text = ("Uptime: -"), background='white')
 uptime.place(x=450, y=570)
 
 def update_uptime():
-  global uptime_sec
-  uptime_sec += 1
+  uptime_sec = query_uptime(hostname)
   uptime.config(text = str("Uptime: " + seconds_to_hms(uptime_sec)))
   root.after(1000, update_uptime)
 
@@ -528,34 +534,36 @@ root.configure(background="white")
 
 def check_elk_host():
   ES_HOST = elk_ip_entry.get()
-  es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
+  es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}], timeout=2)
   if es.ping():
     print("Host up.")
     elk_readiness_label.configure(text="Running", foreground="green")
     return True
   else:
     target_readiness_label.configure(text="Down", foreground="red")
+    showerror('Error', 'ELK server is unreachable.')
     print("Waiting for host to become online...")
     return False
 
 def check_client():
    target_hostname = target_hostname_entry.get()
    target_ip = target_ip_entry.get()
-   if target_hostname in ['elk', 'elk_client', 'elk_client2'] and target_ip in ['192.168.0.103', '192.168.0.104', '192.168.0.105']:
+   if target_hostname in ['elk', 'elk_client', 'elk_yurii'] and target_ip in ['192.168.0.103', '192.168.0.104', '192.168.0.105']:
       target_readiness_label.configure(text="Running", foreground="green")
       return True
    else:
       target_readiness_label.configure(text="Down", foreground="red")
+      showerror('Error', 'Target client is unreachable.')
 
 def start_mon():
    global ES_HOST, es, uptime_sec
    ES_HOST = elk_ip_entry.get()
    es = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT, 'scheme': 'http'}])
    if check_elk_host() and check_client():
-      uptime_sec = query_uptime(hostname)
       root.after(10, update_pie)
       root.after(10, update_uptime)
       root.after(10, update_metrics)
+      showinfo('Success', 'Started monitoring target server.')
 
 Button(root, text='Check ELK server', command=check_elk_host, width=14, height=1).place(x=275, y=60)
 Button(root, text='Check client', command=check_client, width=14, height=1).place(x=275, y=150)
